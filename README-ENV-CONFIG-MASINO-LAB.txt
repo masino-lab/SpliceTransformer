@@ -1,3 +1,5 @@
+This file details the steps taken to setup a working Conda Python environment on the Palmetto Linux HPC cluster with Cuda GPU support. This configuration works with Nvidia A100 GPU. It does NOT work with Nvidia H100 GPU. No other GPUs were tested. 
+
 ## conda env create
 conda create -n sptran python=3.8
 

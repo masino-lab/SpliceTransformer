@@ -49,4 +49,4 @@ pyensembl install --reference-name hg38 --annotation-name gencode.v38 --gtf "dat
 python sptransformer.py --input data/example/input38.vcf --output data/example/output38.tsv --reference hg38 --vcf vcf --svemb yes
 
 # run on your data
-python sptransformer.py --input data/clinvar/clinvar_sample.csv --output data/clinvar/clinvar_sample.tsv --reference hg38 --vcf csv 
+python sptransformer.py --input data/clinvar/clinvar_sample.csv --output data/clinvar/clinvar_sample.tsv --reference hg38 --vcf csv --svemb yes

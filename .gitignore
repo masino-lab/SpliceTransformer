@@ -161,3 +161,6 @@ cython_debug/
 
 
 data/data_package/
+data/clinvar/
+data/embeddings/
+model/weights/

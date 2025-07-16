@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from axial_positional_embedding import AxialPositionalEmbedding
 from sinkhorn_transformer import SinkhornTransformer
-
+import os
 
 class ResBlock(nn.Module):
 
@@ -23,7 +23,7 @@ class ResBlock(nn.Module):
         self.bn2 = nn.BatchNorm1d(L)
         self.conv2 = nn.Conv1d(L, L, W, dilation=AR, padding=padding)
 
-    def forward(self, x):
+    def forward(self, x, record=None):
         out = self.bn1(x)
         out = torch.relu(out)
         out = self.conv1(out)
@@ -53,7 +53,7 @@ class SpEncoder(nn.Module):
         self.tissue_output = nn.Conv1d(L, tissue_cnt, 1)
         self.context_len = context_len
 
-    def forward(self, x, use_usage_head=True):
+    def forward(self, x, use_usage_head=True, record=None):
         x = x[:, 0:4, :]
         conv = self.conv1(x)
         skip = self.skip(conv)
@@ -118,7 +118,7 @@ class SpEncoder_4tis(nn.Module):
         self.conv_last8 = nn.Conv1d(L, 1, 1)
         self.context_len = context_len
 
-    def forward(self, x, use_usage_head=True):
+    def forward(self, x, use_usage_head=True, record=None):
         x = x[:, 0:4, :]
         conv = self.conv1(x)
         skip = self.skip(conv)
@@ -173,7 +173,7 @@ class AttnBlock(nn.Module):
             ff_chunks=10, causal=causal, reversible=reversible, non_permutative=True)
         self.norm = nn.LayerNorm(dim)
 
-    def forward(self, x):
+    def forward(self, x, record=None):
         x = torch.transpose(x, 1, 2).contiguous()
         x = x + self.pos_emb(x)
         # x = self.emb_dropout(x)
@@ -202,7 +202,7 @@ class SpEncoder_L(nn.Module):
         self.tissue_output = nn.Conv1d(L, tissue_cnt, 1)
         self.context_len = context_len
 
-    def forward(self, x, feature=False):
+    def forward(self, x, feature=False, record=None):
         x = x[:, 0:4, :]
         conv = self.conv1(x)
         skip = self.skip(conv)
@@ -242,7 +242,7 @@ class SpEncoder2_L(nn.Module):
                 self.convs.append(nn.Conv1d(L, L, 1))
         self.context_len = context_len
 
-    def forward(self, x, feature=False):
+    def forward(self, x, feature=False, record=None):
         x = x[:, 0:4, :]
         conv = self.conv1(x)
         skip = self.skip(conv)
@@ -300,7 +300,7 @@ class SpTransformer(nn.Module):
             print('Done')
         return nn.ModuleList([model1, model2])
 
-    def forward(self, x):
+    def forward(self, x, record=None):
         target_output_len = x.size(2) - 2 * self.context_len
         target_mid_len = self.max_seq_len
         odd_fix = x.size(2) & 1
@@ -308,6 +308,18 @@ class SpTransformer(nn.Module):
         with torch.no_grad():
             feat1 = [self.encoder[i](x, feature=True) for i in [0, 1]]
         feat1 = torch.concat(feat1, dim=1)
+        if record is not None:
+            _offset = record.get('offset', None)
+            if _offset is not None and record.get('save_var_embeddings', False):
+                var_embed = feat1[:, :, _offset].squeeze()
+                # save var_embed to file in ./data/embeddings/
+                fn = f"./data/embeddings/id_{record['id']}_rg_{record['ref_genome']}_{record['chrom']}_pos_{record['pos']}_ref_{record['ref']}_alt_{record['alt']}_strand_{record['strand']}.pt"
+                
+                #check if file exists, don't save if it does
+                if not os.path.exists(fn):
+                    os.makedirs(os.path.dirname(fn), exist_ok=True)
+                    torch.save(var_embed, fn)
+
         #
         feat2 = self.conv1(x)
         # clip 1

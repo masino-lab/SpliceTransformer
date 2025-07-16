@@ -115,7 +115,7 @@ class ModelDriver:
         """
         raise NotImplementedError
 
-    def step(self, inputs: torch.Tensor):
+    def step(self, inputs: torch.Tensor, record=None):
         """
         Parameters
         ----------
@@ -130,13 +130,13 @@ class ModelDriver:
         assert len(inputs.size()) == 3
         with torch.no_grad():
             for i in range(len(self.models)):
-                out = self.models[i](inputs).cpu().detach()
+                out = self.models[i](inputs,record=record).cpu().detach()
                 out = self.post_decorate(out)
                 output.append(out.numpy())
             output = torch.mean(torch.tensor(np.array(output)), dim=0)
         return output
 
-    def calc_single_sequence(self, seq, encode=False):
+    def calc_single_sequence(self, seq, encode=False, record=None):
         """
         Calculate model output for only one sequence
 
@@ -154,7 +154,7 @@ class ModelDriver:
             raise NotImplementedError
         seq = torch.tensor(seq).to(self.device)
         seq = seq.unsqueeze(0).transpose(1, 2)
-        res = self.step(seq.float())
+        res = self.step(seq.float(), record=record)
         res = res[0].transpose(0, 1).numpy()
         return res
 
@@ -268,7 +268,7 @@ class SNPInterval(SNP):
         if self.strand == '-':
             seq_ref = seq_ref[::-1, ::-1].copy()
             seq_alt = seq_alt[::-1, ::-1].copy()
-        return seq_ref, seq_alt
+        return seq_ref, seq_alt, offset
 
     def align_score(self, ref_fasta: Fasta, ref_score, alt_score):
         """
@@ -441,14 +441,17 @@ class SpTransformerDriver(ModelDriver):
         result = self.calc_batched_sequence(input_list, encode=False)
         return result
 
-    def calc_snp_misaligned(self, snp: SNPInterval, context_len, use_fasta=None):
+    def calc_snp_misaligned(self, snp: SNPInterval, context_len, use_fasta=None, record=None):
         """
         对于负链上的序列，计算完毕后按5'->3'方向输出分数。如果要画图要注意手动反转
         """
         FASTA = use_fasta if use_fasta else self.ref_fasta
-        ref_tensor, alt_tensor = snp.parse(FASTA, context_len)
+        ref_tensor, alt_tensor, offset = snp.parse(FASTA, context_len)
         ref_score = self.calc_single_sequence(ref_tensor, encode=False)
-        alt_score = self.calc_single_sequence(alt_tensor, encode=False)
+        # pass record to model for alt score to store sequence embedding
+        if record is not None:
+            record['offset'] = offset
+        alt_score = self.calc_single_sequence(alt_tensor, encode=False, record=record)
         ref_score, alt_score = snp.align_score(
             FASTA,
             ref_score,

@@ -86,7 +86,7 @@ class Annotator():
         return strand, start, end
 
     def query_scores(self, chrom, pos, ref,
-                     alt, ref_genome='hg38', output_raw=False):
+                     alt, ref_genome='hg38', output_raw=False, record_id=None, save_var_embeddings=False):
         # split input string
         strands, _, _ = self.get_genes(self.gtf[ref_genome], chrom, pos)
         # calculate score
@@ -95,8 +95,9 @@ class Annotator():
         for strand in strands:
             snp = SNPInterval(chrom, strand, int(pos), ref, alt,
                               int(pos)-100, int(pos)+100)
+            record={'chrom': chrom, 'pos': pos, 'ref': ref, 'alt': alt, 'ref_genome': ref_genome, 'strand': strand, 'id': record_id, 'save_var_embeddings': save_var_embeddings}
             score_ref, score_alt = self.model.calc_snp_misaligned(
-                snp, 4000, self.ref_fasta[ref_genome])
+                snp, 4000, self.ref_fasta[ref_genome], record=record)
             # general splicing
             alt_splice = np.max(score_alt[:, 1:3], axis=1)
             ref_splice = np.max(score_ref[:, 1:3], axis=1)
@@ -132,12 +133,12 @@ class Annotator():
                                input_CSV=False,
                                sep=',',
                                column_dict={},
-                               output_raw=False):
+                               output_raw=False,
+                               save_var_embeddings=False):
         tis_names = ['Adipose Tissue', 'Blood', 'Blood Vessel', 'Brain', 'Colon', 'Heart', 'Kidney',
                      'Liver', 'Lung', 'Muscle', 'Nerve', 'Small Intestine', 'Skin', 'Spleen', 'Stomach']
         df_output = pd.DataFrame(
             columns=['#CHROM', 'POS', 'ID', 'REF', 'ALT']+['score']+tis_names)
-
         try:
             if input_CSV:
                 print(f'Reading CSV file:{fname}')
@@ -183,7 +184,7 @@ class Annotator():
             if (len(str(ref)) > 1) or (len(str(alt)) > 1):  # skip indels
                 continue
             splice_score, tissue_flag = self.query_scores(chrom, pos, ref,
-                                                          alt, ref_genome=ref_genome, output_raw=output_raw)
+                                                          alt, ref_genome=ref_genome, output_raw=output_raw, record_id=id, save_var_embeddings=save_var_embeddings)
 
             row = pd.Series({
                 '#CHROM': chrom,
@@ -221,18 +222,24 @@ if __name__ == '__main__':
     parser.add_argument('--reference', type=str, default='hg38',
                         choices=['hg19', 'hg38'],
                         help='Reference genome version')
-    parser.add_argument('--vcf', type=bool, default=True,
-                        choices=[True, False])
+    # EDIT - updated arg to use --vcf as either 'csv' or 'vcf'
+    parser.add_argument('--vcf', type=str, default='vcf',
+                        choices=['csv', 'vcf'])
     parser.add_argument('--raw_score', type=bool, default=False,
                         help='Output raw score for each tissue')
-    #
+    parser.add_argument('--svemb', type=str, default='no', 
+                        choices=['yes', 'no'],
+                        help='Save variant embedding for each variant. If yes, the embeddings will be saved in ./data/embeddings')
+    
     args = parser.parse_args()
     finput = args.input
     foutput = args.output
     ref_genome = args.reference
     output_raw = args.raw_score
-    input_CSV = not args.vcf
+    save_embeddings = True if args.svemb=='yes' else False
+    input_CSV = True if args.vcf=='csv' else False
 
+    print("in main, input_CSV=",input_CSV)
     annotator = Annotator()
     if input_CSV:
         # The .csv file should have at least the following columns: 'CHROM', 'POS', 'REF', 'ALT'
@@ -240,9 +247,10 @@ if __name__ == '__main__':
         # annotate_VCF_general(finput, foutput, model_name='SpTransformer', input_CSV=True, ref_fasta=ref_genome, check_ref=True,
         #                      column_dict={'CHROM': '#CHROM', 'POS': 'POS', 'REF': 'REF', 'ALT': 'ALT'}, sep=',')
         annotator.annotate_variant_table(fname=finput, foutput_name=foutput, ref_genome=ref_genome,
-                                         input_CSV=True, sep=',', column_dict={'chrom': 'CHROM', 'pos': 'POS', 'ref': 'REF', 'alt': 'ALT'}, output_raw=output_raw)
+                                         input_CSV=True, sep=',', column_dict={'chrom': 'CHROM', 'pos': 'POS', 'ref': 'REF', 'alt': 'ALT', 'id': 'ID'}, 
+                                         output_raw=output_raw, save_var_embeddings=save_embeddings)
     else:
         # annotate_VCF_general(finput, foutput, model_name='SpTransformer',
         #                      input_CSV=False, ref_fasta=ref_genome, check_ref=True)
         annotator.annotate_variant_table(fname=finput, foutput_name=foutput, ref_genome=ref_genome,
-                                         input_CSV=False, output_raw=output_raw)
+                                         input_CSV=False, output_raw=output_raw, save_var_embeddings=save_embeddings)
